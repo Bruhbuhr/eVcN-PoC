@@ -49,6 +49,7 @@ test("AI assistant can reserve a recommended charger", async () => {
   render(<App />);
 
   await user.click(screen.getByRole("button", { name: /AI Assistant/i }));
+  expect(screen.getAllByText(/mobility charging consultant/i).length).toBeGreaterThan(0);
   await user.click(screen.getByRole("button", { name: /I need to charge near District 1 before 6pm/i }));
   expect(screen.getByText(/eVcN Copilot is thinking/i)).toBeInTheDocument();
   await user.click(await screen.findByRole("button", { name: /Reserve recommended charger/i }));
@@ -68,5 +69,29 @@ test("AI assistant shows owner insights as a non-reservable chat response", asyn
 
   expect(await screen.findByText(/owner view/i)).toBeInTheDocument();
   expect(screen.getAllByText(/utilization/i).length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button", { name: /Reserve recommended charger/i })).not.toBeInTheDocument();
+});
+
+test("AI assistant treats hello as a greeting instead of a reservation recommendation", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /AI Assistant/i }));
+  await user.type(screen.getByLabelText(/Ask the AI Assistant/i), "hello");
+  await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+  expect(await screen.findByText(/tell me what you need/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Reserve recommended charger/i })).not.toBeInTheDocument();
+});
+
+test("AI assistant treats a mistyped hello as a greeting", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /AI Assistant/i }));
+  await user.type(screen.getByLabelText(/Ask the AI Assistant/i), "helu");
+  await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+  expect(await screen.findByText(/tell me what you need/i)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Reserve recommended charger/i })).not.toBeInTheDocument();
 });

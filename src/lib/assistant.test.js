@@ -1,5 +1,31 @@
-import { answerChargingQuery } from "./assistant";
+import { ASSISTANT_SYSTEM_PROMPT, answerChargingQuery } from "./assistant";
 import { stations } from "../data/mockData";
+
+test("defines a consultant-style system prompt for the local assistant", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("charging consultant");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("electric motorcycle");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("mock eVcN station data");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("Offer a reservation");
+});
+
+test("responds to greetings without recommending a station", () => {
+  const response = answerChargingQuery("hello", stations);
+
+  expect(response.intent).toBe("greeting");
+  expect(response.station).toBeNull();
+  expect(response.canReserve).toBe(false);
+  expect(response.message).toContain("Hi");
+  expect(response.message).toContain("tell me");
+});
+
+test("responds to mistyped greetings without recommending a station", () => {
+  const response = answerChargingQuery("helu", stations);
+
+  expect(response.intent).toBe("greeting");
+  expect(response.station).toBeNull();
+  expect(response.canReserve).toBe(false);
+  expect(response.message).toContain("tell me");
+});
 
 test("recommends the District 1 hub for charging near District 1 before 6pm", () => {
   const response = answerChargingQuery("I need to charge near District 1 before 6pm", stations);
@@ -7,6 +33,7 @@ test("recommends the District 1 hub for charging near District 1 before 6pm", ()
   expect(response.intent).toBe("beforeTime");
   expect(response.needSummary).toContain("before 6pm");
   expect(response.station.name).toBe("eVcN District 1 Hub");
+  expect(response.message).toContain("I recommend");
   expect(response.message).toContain("District 1");
   expect(response.message).toContain("Estimated cost");
   expect(response.canReserve).toBe(true);

@@ -56,7 +56,7 @@ import {
   saveNetworkState,
   updateStationAvailability,
 } from "./lib/booking";
-import { answerChargingQuery } from "./lib/assistant";
+import { ASSISTANT_INTRO_MESSAGE, answerChargingQuery } from "./lib/assistant";
 
 const navItems = [
   { id: "driver", label: "Driver App", icon: Navigation },
@@ -129,7 +129,7 @@ function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "Hi, I can help you compare eVcN motorcycle chargers by distance, price, speed, availability, and timing.",
+      text: ASSISTANT_INTRO_MESSAGE,
     },
   ]);
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
@@ -865,7 +865,7 @@ function Assistant({ messages, isTyping, onAsk, onReserve }) {
         <Badge tone="blue">Rule-based mock AI</Badge>
         <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-slate-950">AI Assistant</h1>
         <p className="mt-3 text-base leading-7 text-slate-600">
-          Ask about electric motorcycle charger speed, price, availability, location, and charging time. The POC uses local logic only.
+          A mobility charging consultant for electric motorcycle riders. Ask about speed, price, availability, location, and charging time. The POC uses local logic only.
         </p>
         <div className="mt-6 space-y-2">
           {exampleQueries.map((sample) => (

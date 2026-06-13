@@ -1,5 +1,21 @@
 import { estimateCharging, formatVnd } from "./booking";
 
+export const ASSISTANT_SYSTEM_PROMPT = `You are eVcN Copilot, a calm mobility charging consultant for electric motorcycle riders in Ho Chi Minh City.
+
+Your job is to make charging feel easy: understand the rider's need, compare only the mock eVcN station data, recommend one best station, and explain the choice in simple practical language.
+
+Always do these steps internally:
+1. Identify the rider's intent: nearest charger, cheapest charger, fastest charger, available now, charging before a time, charging to a target battery percentage, or station owner insights.
+2. Use only local mock data. Do not claim live availability, real payment, real navigation, or a real AI backend.
+3. For driver questions, recommend one station, mention why it fits, estimate charging duration, estimate cost, and keep the tone confident but not pushy.
+4. Offer a reservation when the recommended station is open and has available ports.
+5. If the user asks owner questions, switch to concise SaaS-style operational insights and do not offer a driver reservation.
+
+Voice: helpful consultant, clear, brief, reassuring, and easy for a first-time EV motorcycle rider to follow.`;
+
+export const ASSISTANT_INTRO_MESSAGE =
+  "Hi, I am eVcN Copilot, your mobility charging consultant. Tell me where you are, how fast you need to charge, or your target battery, and I will recommend the easiest motorcycle charging option.";
+
 function availableOpen(stations) {
   return stations.filter((station) => station.isOpen && station.availablePorts > 0);
 }
@@ -10,6 +26,7 @@ function byDistance(a, b) {
 
 function detectIntent(query) {
   const q = query.toLowerCase();
+  if (/^(hi|hello|hey|xin chao|xin chào|chao|chào|good morning|good afternoon|good evening)[!.?\s]*$/.test(q)) return "greeting";
   if (q.includes("owner") || q.includes("dashboard") || q.includes("insight") || q.includes("utilization") || q.includes("fault")) return "ownerInsights";
   if (q.includes("cheapest") || q.includes("lowest") || q.includes("price")) return "cheapest";
   if (q.includes("available now") || q.includes("open now") || q.includes("no wait")) return "availableNow";
@@ -136,8 +153,26 @@ function ownerInsightResponse(stations) {
   };
 }
 
+function greetingResponse() {
+  return {
+    intent: "greeting",
+    needSummary: "You greeted eVcN Copilot.",
+    station: null,
+    canReserve: false,
+    durationMinutes: null,
+    estimatedCost: null,
+    kwhNeeded: null,
+    targetBattery: null,
+    currentBattery: null,
+    reason: "The rider has not shared a charging need yet.",
+    insights: [],
+    message: "Hi, I am here to help. Please tell me what you need: nearest charger, cheapest option, fastest charge, available now, a district like District 1, or your target battery percentage.",
+  };
+}
+
 export function answerChargingQuery(query, stations) {
   const intent = detectIntent(query);
+  if (intent === "greeting") return greetingResponse();
   if (intent === "ownerInsights") return ownerInsightResponse(stations);
 
   const details = {
@@ -163,6 +198,6 @@ export function answerChargingQuery(query, stations) {
     kwhNeeded: estimate.kwhNeeded,
     reason,
     insights: [],
-    message: `Best option: ${station.name}. ${needSummary} ${reason} It is ${station.distanceKm}km away, wait time is ${station.waitMinutes} minutes, and charging from ${details.currentBattery}% to ${details.targetBattery}% should take about ${estimate.durationMinutes} minutes. Estimated cost: ${formatVnd(estimate.estimatedCost)}. Would you like to reserve a charger?`,
+    message: `I recommend ${station.name}. ${needSummary} ${reason} It is ${station.distanceKm}km away, wait time is ${station.waitMinutes} minutes, and charging from ${details.currentBattery}% to ${details.targetBattery}% should take about ${estimate.durationMinutes} minutes. Estimated cost: ${formatVnd(estimate.estimatedCost)}. Would you like to reserve a charger?`,
   };
 }
