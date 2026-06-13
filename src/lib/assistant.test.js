@@ -1,5 +1,9 @@
-import { ASSISTANT_SYSTEM_PROMPT, answerChargingQuery } from "./assistant";
+import { ASSISTANT_SYSTEM_PROMPT, answerChargingQuery, converse, createSlots } from "./assistant";
 import { stations } from "../data/mockData";
+
+const cheapestAvailablePrice = Math.min(
+  ...stations.filter((s) => s.isOpen && s.availablePorts > 0).map((s) => s.pricePerKwh)
+);
 
 test("defines a consultant-style system prompt for the local assistant", () => {
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("charging consultant");
@@ -88,4 +92,51 @@ test("answers station owner insight queries without offering a reservation", () 
   expect(response.station).toBeNull();
   expect(response.insights).toEqual(expect.arrayContaining([expect.stringContaining("utilization")]));
   expect(response.message).toContain("owner view");
+});
+
+test("converse asks a clarifying question for a vague request instead of recommending", () => {
+  const response = converse("I need to charge", stations, createSlots());
+
+  expect(response.kind).toBe("clarify");
+  expect(response.station).toBeNull();
+  expect(response.canReserve).toBe(false);
+  expect(response.quickReplies.length).toBeGreaterThan(0);
+  expect(response.slots.clarifyCount).toBe(1);
+});
+
+test("converse answers a clear request immediately without a clarifying question", () => {
+  const response = converse("What is the fastest charger?", stations, createSlots());
+
+  expect(response.kind).toBe("recommendation");
+  expect(response.intent).toBe("fastest");
+  expect(response.station).not.toBeNull();
+  expect(response.canReserve).toBe(true);
+});
+
+test("converse recommends after the user supplies a priority on a later turn", () => {
+  const first = converse("I want to charge somewhere in District 7", stations, createSlots());
+  expect(first.kind).toBe("clarify");
+  expect(first.slots.district).toBe("District 7");
+
+  const second = converse("cheapest", stations, first.slots);
+  expect(second.kind).toBe("recommendation");
+  expect(second.intent).toBe("cheapest");
+  expect(second.station.pricePerKwh).toBe(cheapestAvailablePrice);
+  expect(second.slots.district).toBe("District 7"); // remembered across turns
+});
+
+test("converse recommends a balanced pick when the user defers the choice", () => {
+  const first = converse("I need to charge", stations, createSlots());
+  const second = converse("just recommend one", stations, first.slots);
+
+  expect(second.kind).toBe("recommendation");
+  expect(second.station).not.toBeNull();
+});
+
+test("converse treats a greeting as a greeting with quick replies", () => {
+  const response = converse("hello", stations, createSlots());
+
+  expect(response.kind).toBe("greeting");
+  expect(response.station).toBeNull();
+  expect(response.quickReplies.length).toBeGreaterThan(0);
 });

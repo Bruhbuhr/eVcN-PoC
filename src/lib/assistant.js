@@ -24,9 +24,38 @@ function byDistance(a, b) {
   return a.distanceKm - b.distanceKm;
 }
 
+const GREETING_WORDS = ["hi", "hello", "hey", "hiya", "helo", "hallo", "hullo", "hai", "yo", "heya", "sup", "howdy"];
+
+function levenshtein(a, b) {
+  const rows = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i += 1) rows[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) rows[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+    }
+  }
+  return rows[a.length][b.length];
+}
+
+// Greetings are short and conversational. Exact multi-word greetings are matched
+// directly; single typo'd tokens ("helu", "hii") are matched within edit distance 1.
+function isGreeting(q) {
+  const cleaned = q.trim().replace(/[!.?,]+$/g, "");
+  if (/^(hi|hello|hey|xin chao|xin chào|chao|chào|good morning|good afternoon|good evening)$/.test(cleaned)) {
+    return true;
+  }
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length !== 1) return false;
+  const first = tokens[0];
+  if (first.length < 2 || first.length > 7) return false;
+  return GREETING_WORDS.some((word) => levenshtein(first, word) <= 1);
+}
+
 function detectIntent(query) {
   const q = query.toLowerCase();
-  if (/^(hi|hello|hey|xin chao|xin chào|chao|chào|good morning|good afternoon|good evening)[!.?\s]*$/.test(q)) return "greeting";
+  if (isGreeting(q)) return "greeting";
   if (q.includes("owner") || q.includes("dashboard") || q.includes("insight") || q.includes("utilization") || q.includes("fault")) return "ownerInsights";
   if (q.includes("cheapest") || q.includes("lowest") || q.includes("price")) return "cheapest";
   if (q.includes("available now") || q.includes("open now") || q.includes("no wait")) return "availableNow";
@@ -168,6 +197,160 @@ function greetingResponse() {
     insights: [],
     message: "Hi, I am here to help. Please tell me what you need: nearest charger, cheapest option, fastest charge, available now, a district like District 1, or your target battery percentage.",
   };
+}
+
+// --- Conversational layer -------------------------------------------------
+// Wraps the rule engine in a stateful, multi-turn dialogue: clear requests are
+// answered immediately, vague ones get a single clarifying follow-up, and
+// answers are remembered across turns via `slots`.
+
+const SPECIFIC_INTENTS = new Set(["nearest", "cheapest", "fastest", "availableNow", "beforeTime", "targetBattery"]);
+const CLARIFY_CHIPS = ["Nearest", "Cheapest", "Fastest", "Available now", "Just recommend one"];
+const PRIORITY_CHIPS = ["Nearest", "Cheapest", "Fastest", "Available now"];
+
+export function createSlots() {
+  return {
+    priority: null,
+    district: null,
+    currentBattery: null,
+    targetBattery: null,
+    timeLabel: null,
+    clarifyCount: 0,
+  };
+}
+
+function clampPercent(value, lo, hi) {
+  return Math.min(Math.max(value, lo), hi);
+}
+
+function parseCurrentBattery(query) {
+  const match = query.match(/(?:from|at|currently|now|have|got|i'?m at)\s*(\d{1,3})\s*%/i);
+  return match ? clampPercent(Number(match[1]), 0, 95) : null;
+}
+
+function parseTargetBattery(query) {
+  const match = query.match(/(?:to|target|reach|up to|until|hit)\s*(\d{1,3})\s*%/i);
+  return match ? clampPercent(Number(match[1]), 10, 100) : null;
+}
+
+function detectDefer(query) {
+  return /\b(any|anything|whatever|just\s+(recommend|pick|choose|tell|one)|you\s+(choose|pick|decide)|idk|don'?t\s+know|doesn'?t\s+matter|surprise\s+me|best\s+one)\b/i.test(query);
+}
+
+function mergeSlots(slots, query, intent, stations) {
+  return {
+    ...slots,
+    priority: SPECIFIC_INTENTS.has(intent) ? intent : slots.priority,
+    district: extractDistrict(query, stations) ?? slots.district,
+    currentBattery: parseCurrentBattery(query) ?? slots.currentBattery,
+    targetBattery: parseTargetBattery(query) ?? slots.targetBattery,
+    timeLabel: extractTimeLabel(query) ?? slots.timeLabel,
+  };
+}
+
+function buildAck(intent, details) {
+  switch (intent) {
+    case "nearest":
+      return "Sure — going for the closest charger.";
+    case "cheapest":
+      return "Good call — optimizing for price.";
+    case "fastest":
+      return "Let's get you charged fast.";
+    case "targetBattery":
+      return `Let's see how quickly you can reach ${details.targetBattery}%.`;
+    case "availableNow":
+      return "Finding somewhere open with a free port right now.";
+    case "beforeTime":
+      return details.timeLabel ? `Need you topped up before ${details.timeLabel} —` : "Working around your timing —";
+    default:
+      return "Here's a solid all-round pick.";
+  }
+}
+
+function clarifyResponse(slots) {
+  return {
+    kind: "clarify",
+    intent: "clarify",
+    needSummary: "A couple of quick details",
+    message:
+      "Happy to help! To point you to the right charger — what matters most: the nearest, cheapest, or fastest option (or one that is available right now)? And if you know it, your current battery % and target (e.g. 20% to 80%) help me estimate.",
+    station: null,
+    canReserve: false,
+    durationMinutes: null,
+    estimatedCost: null,
+    kwhNeeded: null,
+    currentBattery: null,
+    targetBattery: null,
+    reason: "",
+    insights: [],
+    quickReplies: CLARIFY_CHIPS,
+    slots,
+  };
+}
+
+function recommendFromSlots(effectiveIntent, stations, slots) {
+  const batteryProvided = slots.currentBattery != null || slots.targetBattery != null;
+  const details = {
+    currentBattery: slots.currentBattery ?? 30,
+    targetBattery: slots.targetBattery ?? 80,
+    timeLabel: slots.timeLabel,
+    district: slots.district,
+  };
+  const station = pickStation(effectiveIntent, stations, details) || stations[0];
+  const estimate = estimateForStation(station, details.currentBattery, details.targetBattery);
+  const needSummary = buildNeedSummary(effectiveIntent, details);
+  const reason = buildReason(effectiveIntent, station);
+  const canReserve = station.isOpen && station.availablePorts > 0;
+  const ack = buildAck(effectiveIntent, details);
+  const refine = batteryProvided ? "" : " (I assumed about 30% to 80% — tell me your real battery and target to refine.)";
+
+  const message = canReserve
+    ? `${ack} I'd go with ${station.name} — ${reason} It is ${station.distanceKm}km away with a ${station.waitMinutes}-minute wait, and charging ${details.currentBattery}% to ${details.targetBattery}% should take about ${estimate.durationMinutes} minutes (about ${formatVnd(estimate.estimatedCost)}).${refine} Want me to reserve a charger there?`
+    : `${ack} The closest match is ${station.name}, but it is not reservable right now (closed or full). ${reason} Tell me another priority, or ask for "available now".`;
+
+  return {
+    kind: "recommendation",
+    intent: effectiveIntent,
+    needSummary,
+    message,
+    station,
+    canReserve,
+    currentBattery: details.currentBattery,
+    targetBattery: details.targetBattery,
+    durationMinutes: estimate.durationMinutes,
+    estimatedCost: estimate.estimatedCost,
+    kwhNeeded: estimate.kwhNeeded,
+    reason,
+    insights: [],
+    quickReplies: null,
+    slots,
+  };
+}
+
+export function converse(query, stations, slots = createSlots()) {
+  const intent = detectIntent(query);
+
+  if (intent === "greeting") {
+    return { ...greetingResponse(), kind: "greeting", quickReplies: PRIORITY_CHIPS, slots };
+  }
+  if (intent === "ownerInsights") {
+    return { ...ownerInsightResponse(stations), kind: "ownerInsights", quickReplies: null, slots };
+  }
+
+  const nextSlots = mergeSlots(slots, query, intent, stations);
+  const isSpecific = SPECIFIC_INTENTS.has(intent);
+  const hasPriority = isSpecific || nextSlots.priority != null;
+
+  if (hasPriority || detectDefer(query)) {
+    const effectiveIntent = isSpecific ? intent : nextSlots.priority || "general";
+    return recommendFromSlots(effectiveIntent, stations, nextSlots);
+  }
+
+  // Vague request with no known priority: ask once, then recommend a balanced pick.
+  if (nextSlots.clarifyCount === 0) {
+    return clarifyResponse({ ...nextSlots, clarifyCount: 1 });
+  }
+  return recommendFromSlots("general", stations, nextSlots);
 }
 
 export function answerChargingQuery(query, stations) {

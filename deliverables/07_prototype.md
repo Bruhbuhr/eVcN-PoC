@@ -14,7 +14,7 @@ Driver App  →  AI Assistant  →  Recommendation  →  Booking Modal  →  Con
 flowchart TD
     A[Open Driver App] --> B{How to find a charger?}
     B -->|Browse + filter| C[Station cards: Fast / Cheapest / Available / Closest]
-    B -->|Ask Copilot| D[AI Assistant: "charge near District 1 before 6pm"]
+    B -->|Ask Copilot| D[AI Assistant: &quot;charge near District 1 before 6pm&quot;]
     D --> E[eVcN Copilot detects intent + picks 1 station]
     E --> F[Recommendation card: reason, duration, cost, kWh, ports]
     C --> G[Tap 'Reserve Charger']

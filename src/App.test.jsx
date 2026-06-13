@@ -95,3 +95,30 @@ test("AI assistant treats a mistyped hello as a greeting", async () => {
   expect(await screen.findByText(/tell me what you need/i)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Reserve recommended charger/i })).not.toBeInTheDocument();
 });
+
+test("AI assistant asks a clarifying question for a vague request instead of recommending", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /AI Assistant/i }));
+  await user.type(screen.getByLabelText(/Ask the AI Assistant/i), "I need to charge");
+  await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+  expect(await screen.findByText(/what matters most/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Reserve recommended charger/i })).not.toBeInTheDocument();
+  // Quick-reply chips let the user answer in one tap.
+  expect(screen.getByRole("button", { name: /Just recommend one/i })).toBeInTheDocument();
+});
+
+test("AI assistant recommends after the user taps a quick-reply chip", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /AI Assistant/i }));
+  await user.type(screen.getByLabelText(/Ask the AI Assistant/i), "I need to charge");
+  await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+  await user.click(await screen.findByRole("button", { name: /^Cheapest$/i }));
+
+  expect(await screen.findByRole("button", { name: /Reserve recommended charger/i })).toBeInTheDocument();
+});

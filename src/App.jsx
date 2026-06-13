@@ -56,7 +56,7 @@ import {
   saveNetworkState,
   updateStationAvailability,
 } from "./lib/booking";
-import { ASSISTANT_INTRO_MESSAGE, answerChargingQuery } from "./lib/assistant";
+import { ASSISTANT_INTRO_MESSAGE, converse, createSlots } from "./lib/assistant";
 
 const navItems = [
   { id: "driver", label: "Driver App", icon: Navigation },
@@ -133,6 +133,7 @@ function App() {
     },
   ]);
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [assistantSlots, setAssistantSlots] = useState(createSlots);
   const responseTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -218,13 +219,18 @@ function App() {
       { role: "user", text: query },
     ]);
 
+    const response = converse(query, stations, assistantSlots);
+    // A quick beat to acknowledge, a longer one to "check the stations".
+    const delay = response.kind === "recommendation" ? 700 : 400;
+
     responseTimeoutRef.current = window.setTimeout(() => {
-      const response = answerChargingQuery(query, stations);
+      setAssistantSlots(response.slots);
       setMessages((current) => [
         ...current,
         {
           role: "assistant",
           text: response.message,
+          kind: response.kind,
           intent: response.intent,
           needSummary: response.needSummary,
           reason: response.reason,
@@ -236,10 +242,11 @@ function App() {
           durationMinutes: response.durationMinutes,
           estimatedCost: response.estimatedCost,
           insights: response.insights,
+          quickReplies: response.quickReplies,
         },
       ]);
       setIsAssistantTyping(false);
-    }, 650);
+    }, delay);
   }
 
   return (
@@ -805,8 +812,9 @@ function AssistantMessageCard({ message, onReserve }) {
   );
 }
 
-function ChatBubble({ message, onReserve }) {
+function ChatBubble({ message, onReserve, onAsk, isLast = false, isTyping = false }) {
   const isUser = message.role === "user";
+  const showQuickReplies = !isUser && isLast && Boolean(message.quickReplies?.length);
 
   return (
     <div className={`flex items-end gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -829,6 +837,21 @@ function ChatBubble({ message, onReserve }) {
           <p className="text-sm leading-6">{message.text}</p>
           {!isUser ? <AssistantMessageCard message={message} onReserve={onReserve} /> : null}
         </div>
+        {showQuickReplies ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.quickReplies.map((reply) => (
+              <button
+                key={reply}
+                type="button"
+                disabled={isTyping}
+                onClick={() => onAsk(reply)}
+                className="cursor-pointer rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 transition-colors duration-200 hover:bg-emerald-400/20 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {reply}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {isUser ? (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-sky-500 text-white ring-1 ring-sky-300/40">
@@ -898,7 +921,14 @@ function Assistant({ messages, isTyping, onAsk, onReserve }) {
           </div>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_20%_0%,rgba(14,165,233,0.18),transparent_22rem),radial-gradient(circle_at_90%_10%,rgba(16,185,129,0.12),transparent_18rem)] p-4 sm:p-5">
             {messages.map((message, index) => (
-              <ChatBubble key={`${message.role}-${index}`} message={message} onReserve={onReserve} />
+              <ChatBubble
+                key={`${message.role}-${index}`}
+                message={message}
+                onReserve={onReserve}
+                onAsk={onAsk}
+                isLast={index === messages.length - 1}
+                isTyping={isTyping}
+              />
             ))}
             {isTyping ? <TypingIndicator /> : null}
             <div ref={messagesEndRef} />
