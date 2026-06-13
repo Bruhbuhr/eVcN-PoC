@@ -6,7 +6,7 @@ test("renders the main navigation", () => {
   render(<App />);
 
   expect(screen.getByRole("button", { name: /Driver App/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Station Dashboard/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Station Owner Dashboard/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /AI Assistant/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Bookings/i })).toBeInTheDocument();
 });
@@ -132,7 +132,7 @@ test("owner closing a station on the dashboard propagates to the driver app", as
   expect(within(cardBefore).getByRole("button", { name: /Reserve Charger/i })).toBeEnabled();
 
   // Owner closes that station on the dashboard.
-  await user.click(screen.getByRole("button", { name: /Station Dashboard/i }));
+  await user.click(screen.getByRole("button", { name: /Station Owner Dashboard/i }));
   await user.click(screen.getByRole("button", { name: /Close eVcN District 1 Hub/i }));
 
   // Back on the driver app, the same station can no longer be reserved.
@@ -145,7 +145,7 @@ test("owner marking a charger faulty reduces the station's available ports for r
   const user = userEvent.setup();
   render(<App />);
 
-  await user.click(screen.getByRole("button", { name: /Station Dashboard/i }));
+  await user.click(screen.getByRole("button", { name: /Station Owner Dashboard/i }));
   // District 7 has 4 available chargers; faulting one should drop availability.
   const row = screen.getByText("D7-S01").closest("tr");
   await user.click(within(row).getByRole("button", { name: /^Fault$/i }));
