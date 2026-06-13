@@ -72,6 +72,55 @@ export function updateStationAvailability(stationList, stationId) {
   });
 }
 
+// Treat the charger list as the source of truth for a station's port counts.
+// Recomputes availablePorts (chargers marked "Available") and totalPorts so that
+// owner edits to chargers propagate to the rider-facing station data.
+export function syncStationPorts(stationList, chargerList) {
+  return stationList.map((station) => {
+    const own = chargerList.filter((charger) => charger.stationId === station.id);
+    return {
+      ...station,
+      availablePorts: own.filter((charger) => charger.status === "Available").length,
+      totalPorts: own.length,
+    };
+  });
+}
+
+const CHARGER_TYPE_LETTER = { Fast: "F", "Ultra-fast": "U", Standard: "S" };
+
+function stationPrefix(station, chargerList) {
+  const existing = chargerList.find((charger) => charger.stationId === station.id);
+  if (existing?.id?.includes("-")) return existing.id.split("-")[0];
+  return station.district
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 3);
+}
+
+// Build a new "Available" charger for a station with a non-colliding id
+// (e.g. D1-F06), derived from the station's existing chargers.
+export function createCharger(station, chargerList) {
+  const own = chargerList.filter((charger) => charger.stationId === station.id);
+  const prefix = stationPrefix(station, chargerList);
+  const letter = CHARGER_TYPE_LETTER[station.chargerType] || "C";
+  const usedNumbers = own
+    .map((charger) => Number(String(charger.id).split("-")[1]?.replace(/\D/g, "")))
+    .filter((value) => Number.isFinite(value));
+  const next = (usedNumbers.length ? Math.max(...usedNumbers) : 0) + 1;
+
+  return {
+    id: `${prefix}-${letter}${String(next).padStart(2, "0")}`,
+    stationId: station.id,
+    station: station.name,
+    type: station.chargerType,
+    status: "Available",
+    currentUser: "-",
+    sessionMinutes: 0,
+  };
+}
+
 export function loadSavedBookings(seedBookings) {
   try {
     ensureStorageVersion();

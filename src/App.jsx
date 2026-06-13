@@ -15,12 +15,15 @@ import {
   MessageSquare,
   Navigation,
   PlugZap,
+  Plus,
+  Power,
   Radio,
   Route,
   Search,
   ShieldCheck,
   Sparkles,
   Star,
+  Trash2,
   TrendingUp,
   WalletCards,
   X,
@@ -44,19 +47,20 @@ import {
   sessions,
   stations as seedStations,
   timeSlots,
-  utilizationData,
 } from "./data/mockData";
 import {
   createBooking,
+  createCharger,
   estimateCharging,
   formatVnd,
   loadSavedBookings,
   loadSavedNetworkState,
   saveBookings,
   saveNetworkState,
+  syncStationPorts,
   updateStationAvailability,
 } from "./lib/booking";
-import { ASSISTANT_INTRO_MESSAGE, converse, createSlots } from "./lib/assistant";
+import { ASSISTANT_INTRO_MESSAGE, buildOwnerInsights, converse, createSlots } from "./lib/assistant";
 
 const navItems = [
   { id: "driver", label: "Driver App", icon: Navigation },
@@ -152,6 +156,20 @@ function App() {
     saveNetworkState("evcn-chargers", chargers);
   }, [chargers]);
 
+  // Chargers are the source of truth for ports: whenever owner actions change a
+  // charger, re-derive each station's available/total ports so rider-facing data
+  // (Driver App, Booking modal, Copilot) stays in sync. No-op guard avoids loops.
+  useEffect(() => {
+    setStations((current) => {
+      const synced = syncStationPorts(current, chargers);
+      const changed = synced.some(
+        (station, index) =>
+          station.availablePorts !== current[index].availablePorts || station.totalPorts !== current[index].totalPorts
+      );
+      return changed ? synced : current;
+    });
+  }, [chargers]);
+
   const stationMap = useMemo(() => Object.fromEntries(stations.map((station) => [station.id, station])), [stations]);
 
   const filteredStations = useMemo(() => {
@@ -176,10 +194,12 @@ function App() {
     const activeSessions = sessions.length;
     const revenueToday = sessions.reduce((sum, session) => sum + session.revenue, 0) + bookings.reduce((sum, booking) => sum + (booking.estimatedCost || 0), 0);
     const unavailable = chargers.filter((charger) => charger.status !== "Available").length;
-    const utilization = Math.round((unavailable / totalChargers) * 100);
+    const utilization = totalChargers ? Math.round((unavailable / totalChargers) * 100) : 0;
     const faults = chargers.filter((charger) => charger.status === "Faulty").length;
     return { totalChargers, availableChargers, activeSessions, revenueToday, utilization, faults };
   }, [bookings, chargers]);
+
+  const ownerInsights = useMemo(() => buildOwnerInsights(stations, chargers), [stations, chargers]);
 
   function openBooking(station) {
     setSuccessBooking(null);
@@ -249,6 +269,43 @@ function App() {
     }, delay);
   }
 
+  // --- Owner actions: mutate shared state; the sync effect + rider views propagate them.
+  function toggleStationOpen(stationId) {
+    setStations((current) =>
+      current.map((station) => (station.id === stationId ? { ...station, isOpen: !station.isOpen } : station))
+    );
+  }
+
+  function setStationPrice(stationId, price) {
+    const value = Math.max(0, Math.round(Number(price) || 0));
+    setStations((current) =>
+      current.map((station) => (station.id === stationId ? { ...station, pricePerKwh: value } : station))
+    );
+  }
+
+  function setChargerStatus(chargerId, status) {
+    setChargers((current) =>
+      current.map((charger) => {
+        if (charger.id !== chargerId) return charger;
+        const reset = status === "Available";
+        return {
+          ...charger,
+          status,
+          currentUser: reset ? "-" : charger.currentUser,
+          sessionMinutes: reset ? 0 : charger.sessionMinutes,
+        };
+      })
+    );
+  }
+
+  function addCharger(station) {
+    setChargers((current) => [...current, createCharger(station, current)]);
+  }
+
+  function removeCharger(chargerId) {
+    setChargers((current) => current.filter((charger) => charger.id !== chargerId));
+  }
+
   return (
     <div className="min-h-screen text-slate-900">
       <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5">
@@ -297,7 +354,18 @@ function App() {
           />
         ) : null}
         {activeView === "dashboard" ? (
-          <Dashboard metrics={dashboardMetrics} chargers={chargers} bookings={bookings} />
+          <Dashboard
+            stations={stations}
+            metrics={dashboardMetrics}
+            chargers={chargers}
+            bookings={bookings}
+            insights={ownerInsights}
+            onToggleStation={toggleStationOpen}
+            onSetPrice={setStationPrice}
+            onSetChargerStatus={setChargerStatus}
+            onAddCharger={addCharger}
+            onRemoveCharger={removeCharger}
+          />
         ) : null}
         {activeView === "assistant" ? (
           <Assistant messages={messages} isTyping={isAssistantTyping} onAsk={handleAssistantQuery} onReserve={openBooking} />
@@ -436,7 +504,7 @@ function MapPanel({ stations }) {
 
 function StationCard({ station, onReserve }) {
   const isReservable = station.isOpen && station.availablePorts > 0;
-  const availabilityPercent = Math.round((station.availablePorts / station.totalPorts) * 100);
+  const availabilityPercent = station.totalPorts ? Math.round((station.availablePorts / station.totalPorts) * 100) : 0;
   return (
     <article className="group overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/95 p-5 shadow-sm ring-1 ring-slate-200/70 backdrop-blur transition-all duration-200 hover:-translate-y-1 hover:shadow-lift">
       <div className="mb-5 h-1.5 rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-blue-600" />
@@ -958,7 +1026,28 @@ function Assistant({ messages, isTyping, onAsk, onReserve }) {
   );
 }
 
-function Dashboard({ metrics, chargers, bookings }) {
+function Dashboard({
+  stations,
+  metrics,
+  chargers,
+  bookings,
+  insights,
+  onToggleStation,
+  onSetPrice,
+  onSetChargerStatus,
+  onAddCharger,
+  onRemoveCharger,
+}) {
+  const liveUtilization = stations.map((station) => {
+    const own = chargers.filter((charger) => charger.stationId === station.id);
+    const total = own.length;
+    const inUse = own.filter((charger) => charger.status !== "Available").length;
+    return {
+      station: station.district.replace("District ", "D"),
+      utilization: total ? Math.round((inUse / total) * 100) : 0,
+    };
+  });
+
   return (
     <section className="space-y-6">
       <div className="overflow-hidden rounded-[2rem] bg-slate-950 p-6 text-white shadow-lift">
@@ -967,7 +1056,7 @@ function Dashboard({ metrics, chargers, bookings }) {
             <Badge tone="green">Owner operations</Badge>
             <h1 className="mt-4 font-display text-4xl font-bold tracking-tight">Station Owner Dashboard</h1>
             <p className="mt-3 max-w-2xl text-base leading-7 text-slate-300">
-              Monitor electric motorcycle charger availability, reservations, revenue, utilization, and faults from one control center.
+              Monitor and manage your electric motorcycle network — open or close stations, tune pricing, and handle chargers. Every change flows live to riders.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-3 rounded-3xl border border-white/10 bg-white/10 p-3 backdrop-blur">
@@ -985,8 +1074,14 @@ function Dashboard({ metrics, chargers, bookings }) {
         <StatCard icon={Gauge} label="Utilization rate" value={`${metrics.utilization}%`} />
         <StatCard icon={AlertTriangle} label="Fault alerts" value={metrics.faults} tone="red" />
       </div>
+      <StationControls
+        stations={stations}
+        onToggleStation={onToggleStation}
+        onSetPrice={onSetPrice}
+        onAddCharger={onAddCharger}
+      />
       <div className="grid gap-6 xl:grid-cols-2">
-        <ChartCard title="Revenue today" summary="Line chart showing mock eVcN motorcycle charging revenue rising from 42,000 VND at 8am to a 210,000 VND peak at 6pm.">
+        <ChartCard title="Revenue today" summary="Mock eVcN motorcycle charging revenue across the day, peaking during the 5pm to 8pm evening rush.">
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={revenueData}>
               <defs>
@@ -1003,9 +1098,9 @@ function Dashboard({ metrics, chargers, bookings }) {
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Station utilization" summary="Bar chart comparing station utilization: District 1 at 86%, Thao Dien at 78%, District 7 at 42%, Binh Thanh at 92%, and Tan Binh at 64%.">
+        <ChartCard title="Station utilization" summary="Live utilization per station (busy ports ÷ total ports). Updates as you change chargers.">
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={utilizationData}>
+            <BarChart data={liveUtilization}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
               <XAxis dataKey="station" />
               <YAxis />
@@ -1018,7 +1113,7 @@ function Dashboard({ metrics, chargers, bookings }) {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <TableCard title="Charger status">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-200">
                   <th scope="col" className="py-3">Charger ID</th>
@@ -1027,6 +1122,7 @@ function Dashboard({ metrics, chargers, bookings }) {
                   <th scope="col">Status</th>
                   <th scope="col">Current user</th>
                   <th scope="col">Session time</th>
+                  <th scope="col" className="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1038,16 +1134,133 @@ function Dashboard({ metrics, chargers, bookings }) {
                     <td><StatusBadge status={charger.status} /></td>
                     <td>{charger.currentUser}</td>
                     <td>{charger.sessionMinutes ? `${charger.sessionMinutes} min` : "-"}</td>
+                    <td className="py-2 text-right">
+                      <ChargerActions
+                        charger={charger}
+                        onSetChargerStatus={onSetChargerStatus}
+                        onRemoveCharger={onRemoveCharger}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </TableCard>
-        <AIInsights />
+        <AIInsights insights={insights} />
       </div>
       <BookingsTable bookings={bookings.slice(0, 8)} title="Recent bookings" />
     </section>
+  );
+}
+
+function StationControls({ stations, onToggleStation, onSetPrice, onAddCharger }) {
+  return (
+    <TableCard title="Station controls">
+      <p className="-mt-2 mb-4 text-sm leading-6 text-slate-600">
+        Open or close stations, tune price per kWh, and add chargers. Changes flow straight to the Driver App and the AI assistant.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-slate-200">
+              <th scope="col" className="py-3">Station</th>
+              <th scope="col">Status</th>
+              <th scope="col">Price / kWh (VND)</th>
+              <th scope="col">Ports</th>
+              <th scope="col" className="text-right">Chargers</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {stations.map((station) => (
+              <tr key={station.id} className="transition-colors duration-200 hover:bg-slate-50">
+                <td className="py-3">
+                  <p className="font-semibold text-slate-950">{station.name}</p>
+                  <p className="text-xs text-slate-500">{station.district}</p>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => onToggleStation(station.id)}
+                    aria-pressed={station.isOpen}
+                    aria-label={`${station.isOpen ? "Close" : "Open"} ${station.name}`}
+                    className={`inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 ${
+                      station.isOpen
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <Power className="h-3.5 w-3.5" aria-hidden="true" />
+                    {station.isOpen ? "Open" : "Closed"}
+                  </button>
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={station.pricePerKwh}
+                    onChange={(event) => onSetPrice(station.id, event.target.value)}
+                    aria-label={`Price per kWh for ${station.name}`}
+                    className="min-h-9 w-28 rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-950 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                  />
+                </td>
+                <td className="font-semibold text-slate-700">
+                  {station.availablePorts}/{station.totalPorts}
+                </td>
+                <td className="py-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onAddCharger(station)}
+                    className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors duration-200 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Add charger
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </TableCard>
+  );
+}
+
+function ActionButton({ tone, icon: Icon, label, onClick }) {
+  const tones = {
+    green: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    amber: "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100",
+    blue: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100",
+    red: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1 ${tones[tone]}`}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
+
+function ChargerActions({ charger, onSetChargerStatus, onRemoveCharger }) {
+  const isFaulty = charger.status === "Faulty";
+  const isBusy = charger.status === "In Use" || charger.status === "Reserved";
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {isFaulty ? (
+        <ActionButton tone="green" icon={CheckCircle2} label="Fix" onClick={() => onSetChargerStatus(charger.id, "Available")} />
+      ) : (
+        <ActionButton tone="amber" icon={AlertTriangle} label="Fault" onClick={() => onSetChargerStatus(charger.id, "Faulty")} />
+      )}
+      {isBusy ? (
+        <ActionButton tone="blue" icon={Zap} label="Free" onClick={() => onSetChargerStatus(charger.id, "Available")} />
+      ) : null}
+      <ActionButton tone="red" icon={Trash2} label="Remove" onClick={() => onRemoveCharger(charger.id)} />
+    </div>
   );
 }
 
@@ -1092,12 +1305,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function AIInsights() {
-  const insights = [
-    "District 1 station has 86% utilization. Consider adding 2 more fast chargers.",
-    "Evening demand is highest between 5pm and 8pm.",
-    "Faulty charger at Thao Dien station may reduce revenue by 18% today.",
-  ];
+function AIInsights({ insights }) {
   return (
     <aside className="rounded-[1.75rem] border border-slate-800 bg-slate-950 p-5 text-white shadow-lift">
       <div className="flex items-center gap-3">

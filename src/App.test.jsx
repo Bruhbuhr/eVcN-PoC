@@ -122,3 +122,35 @@ test("AI assistant recommends after the user taps a quick-reply chip", async () 
 
   expect(await screen.findByRole("button", { name: /Reserve recommended charger/i })).toBeInTheDocument();
 });
+
+test("owner closing a station on the dashboard propagates to the driver app", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  // Driver view: the District 1 hub is reservable.
+  const cardBefore = screen.getByText("eVcN District 1 Hub").closest("article");
+  expect(within(cardBefore).getByRole("button", { name: /Reserve Charger/i })).toBeEnabled();
+
+  // Owner closes that station on the dashboard.
+  await user.click(screen.getByRole("button", { name: /Station Dashboard/i }));
+  await user.click(screen.getByRole("button", { name: /Close eVcN District 1 Hub/i }));
+
+  // Back on the driver app, the same station can no longer be reserved.
+  await user.click(screen.getByRole("button", { name: /Driver App/i }));
+  const cardAfter = screen.getByText("eVcN District 1 Hub").closest("article");
+  expect(within(cardAfter).getByRole("button", { name: /Reserve Charger/i })).toBeDisabled();
+});
+
+test("owner marking a charger faulty reduces the station's available ports for riders", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /Station Dashboard/i }));
+  // District 7 has 4 available chargers; faulting one should drop availability.
+  const row = screen.getByText("D7-S01").closest("tr");
+  await user.click(within(row).getByRole("button", { name: /^Fault$/i }));
+
+  await user.click(screen.getByRole("button", { name: /Driver App/i }));
+  const card = screen.getByText("eVcN District 7 Crescent").closest("article");
+  expect(within(card).getByText("3/4")).toBeInTheDocument();
+});

@@ -353,6 +353,47 @@ export function converse(query, stations, slots = createSlots()) {
   return recommendFromSlots("general", stations, nextSlots);
 }
 
+// Data-driven owner insights for the Station Dashboard. Recomputes from the live
+// station + charger state, so it reacts to owner edits (faults, closures, load).
+export function buildOwnerInsights(stations, chargers) {
+  const insights = [];
+
+  const withUtilization = stations.map((station) => {
+    const own = chargers.filter((charger) => charger.stationId === station.id);
+    const total = own.length;
+    const inUse = own.filter((charger) => charger.status !== "Available").length;
+    return { ...station, totalChargers: total, utilization: total ? Math.round((inUse / total) * 100) : 0 };
+  });
+
+  const busiest = [...withUtilization].sort((a, b) => b.utilization - a.utilization)[0];
+  if (busiest && busiest.totalChargers > 0) {
+    insights.push(
+      `${busiest.district} is your busiest site at ${busiest.utilization}% utilization. Consider adding fast chargers for the evening peak.`
+    );
+  }
+
+  const faulty = chargers.filter((charger) => charger.status === "Faulty");
+  if (faulty.length) {
+    const sites = [...new Set(faulty.map((charger) => charger.station))].join(", ");
+    insights.push(
+      `${faulty.length} charger${faulty.length > 1 ? "s are" : " is"} faulty (${sites}). Fixing ${faulty.length > 1 ? "them" : "it"} recovers lost revenue today.`
+    );
+  } else {
+    insights.push("All chargers are healthy right now — no faults to action.");
+  }
+
+  insights.push("Demand peaks between 5pm and 8pm, so focus pricing and staffing on that window.");
+
+  const closed = stations.filter((station) => !station.isOpen);
+  if (closed.length) {
+    insights.push(
+      `${closed.map((station) => station.district).join(", ")} ${closed.length > 1 ? "are" : "is"} closed, pushing riders to nearby stations. Reopen to recapture demand.`
+    );
+  }
+
+  return insights;
+}
+
 export function answerChargingQuery(query, stations) {
   const intent = detectIntent(query);
   if (intent === "greeting") return greetingResponse();

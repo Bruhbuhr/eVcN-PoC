@@ -1,5 +1,5 @@
-import { ASSISTANT_SYSTEM_PROMPT, answerChargingQuery, converse, createSlots } from "./assistant";
-import { stations } from "../data/mockData";
+import { ASSISTANT_SYSTEM_PROMPT, answerChargingQuery, buildOwnerInsights, converse, createSlots } from "./assistant";
+import { chargers, stations } from "../data/mockData";
 
 const cheapestAvailablePrice = Math.min(
   ...stations.filter((s) => s.isOpen && s.availablePorts > 0).map((s) => s.pricePerKwh)
@@ -139,4 +139,20 @@ test("converse treats a greeting as a greeting with quick replies", () => {
   expect(response.kind).toBe("greeting");
   expect(response.station).toBeNull();
   expect(response.quickReplies.length).toBeGreaterThan(0);
+});
+
+test("buildOwnerInsights derives insights from live station and charger data", () => {
+  const insights = buildOwnerInsights(stations, chargers);
+
+  expect(insights.length).toBeGreaterThanOrEqual(3);
+  expect(insights.some((line) => /utilization/i.test(line))).toBe(true);
+  // Seed data has one faulty charger, so a fault insight must surface.
+  expect(insights.some((line) => /faulty/i.test(line))).toBe(true);
+});
+
+test("buildOwnerInsights reports a healthy fleet when there are no faults", () => {
+  const healthy = chargers.map((charger) => (charger.status === "Faulty" ? { ...charger, status: "Available" } : charger));
+  const insights = buildOwnerInsights(stations, healthy);
+
+  expect(insights.some((line) => /no faults/i.test(line))).toBe(true);
 });
