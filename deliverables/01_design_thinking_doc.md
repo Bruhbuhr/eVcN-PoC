@@ -36,16 +36,16 @@ Brainstormed solution space (wild → practical):
 ## Prototype
 The artifact built to test these bets is the **eVcN React POC** in this repo (`eVcN-PoC/`):
 *   A high-fidelity, clickable web app with four views: **Driver App**, **AI Assistant**, **Station Dashboard**, **Bookings**.
-*   **eVcN Copilot** runs as a *rule-based mock AI* (`src/lib/assistant.js`) that detects 8 intents (nearest, cheapest, fastest, available-now, before-time, target-battery, owner-insights, greeting), recommends one station, and explains why.
+*   **eVcN Copilot** runs as a *conversational rule-based mock AI* (`src/lib/assistant.js`): when a request is vague it asks **one clarifying follow-up** (with quick-reply chips), **remembers** the answers across turns, and only then recommends — while clear requests (nearest, cheapest, fastest, available-now, before-time, target-battery) still answer immediately. It also handles owner-insight questions and typo-tolerant greetings, then recommends one station and explains why.
 *   A **reservation flow** (`BookingModal`) with a live charging estimate (kWh needed, duration, cost) computed from a transparent model (`src/lib/booking.js`).
-*   An **owner dashboard** with revenue/utilization/fault metrics and AI insight cards.
-*   **Faked backend:** 5 mock HCMC stations + 20 chargers (`src/data/mockData.js`), `localStorage` persistence, and a simulated ~650 ms "thinking" delay. No live data, payments, navigation, or real LLM — by design, to test the *experience* before building expensive infrastructure.
-*   **Core flow demonstrated:** ask Copilot → get one recommendation → reserve → enter motorcycle + battery details → confirm → see the booking and revenue update on the owner dashboard.
+*   An **interactive owner console** (Station Dashboard): the owner can open/close stations, mark chargers faulty/fixed, edit price per kWh, and add/remove chargers, alongside revenue/utilization/fault metrics and **data-driven** AI insights. Every owner edit **propagates live** to the rider Driver App, the booking estimate, and the Copilot's recommendations.
+*   **Faked backend:** 5 mock HCMC stations + 20 chargers (`src/data/mockData.js`), `localStorage` persistence, and a short simulated "thinking" delay (~400 ms to ask, ~700 ms to recommend). No live data, payments, navigation, or real LLM — by design, to test the *experience* before building expensive infrastructure.
+*   **Core flow demonstrated:** ask Copilot → *clarify if vague* → get one recommendation → reserve → enter motorcycle + battery details → confirm → see the booking and revenue update on the owner console — then, as an owner, close a station or fault a charger and watch it change what riders can book.
 
 ## Test
 *   **Who we'll test with:** 6–10 HCMC e-motorbike riders (a mix of commuter, student, and delivery profiles) and 2–3 small station owners.
 *   **What we're seeking:**
     *   *Riders:* Does a single recommendation feel **trustworthy** (vs. wanting a full list)? Do they understand the cost/time estimate? Would they actually reserve before arriving? Does the Copilot understand their phrasing (incl. Vietnamese place names like "District 1")?
-    *   *Owners:* Is the dashboard **actionable** — would they change pricing/staffing or add chargers based on it? What single metric do they check first?
+    *   *Owners:* The console is now **actionable** — are open/close, fault/fix, repricing, and add/remove the right controls? Do they trust that an edit instantly reaches riders? What single metric do they check first?
 *   **How we measure success/failure:** task completion (find + reserve in under ~60s), a trust/confidence rating on the recommendation, stated willingness to pay (riders) or subscribe (owners), and qualitative "would use daily." Failure signals: users re-open the full list instead of trusting the pick; confusion at the estimate; owners shrug at the dashboard.
 *   **Impact:** results feed directly back into the [PRD](06_prd.md) (which intents/fields to keep), the [Roadmap](05_product_roadmap.md) (rule-based → LLM, and live-data priority), and the [DVF](04_dvf.md) viability case.

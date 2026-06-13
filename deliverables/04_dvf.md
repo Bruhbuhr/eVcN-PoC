@@ -5,7 +5,7 @@
 ## Desirable (for users)
 **Yes — for both sides of the market.**
 *   **Riders:** HCMC runs on motorbikes, and electrification is accelerating (VinFast Feliz/Klara/Evo, Dat Bike, Selex, Yadea). A small ~4 kWh battery means riders charge 3–5× a week, and many live in apartments where in-unit charging is restricted, so they *depend* on public chargers. The acute, recurring pain is not "find a station on a map" — it's **"find one that's actually free, fast/cheap enough, and hold it before I ride over."** The POC's single-answer Copilot ("charge near District 1 before 6pm" → one pick + estimate + reserve) directly removes the comparison and the wasted-trip risk. The pain is frequent and emotional enough to change behavior.
-*   **Owners:** Small operators are flying blind on utilization (mock network shows 42–92%), faults, and revenue. A dashboard that says "you're at 86% — add 2 chargers" or "a faulty unit is costing ~18% today" is a painkiller for their core anxiety: *am I making money and is my equipment up?*
+*   **Owners:** Small operators are flying blind on utilization (mock network shows 42–92%), faults, and revenue. A dashboard that says "you're at 86% — add 2 chargers" or "a faulty unit is costing ~18% today" is a painkiller for their core anxiety: *am I making money and is my equipment up?* The interactive prototype goes a step further — the owner can **act** on those signals in one click (open/close, fix a fault, reprice, add a charger) and instantly see it ripple to riders, making the value tangible rather than passive.
 *   **Evidence to gather (Test stage):** task-completion + trust ratings on the single recommendation, willingness-to-reserve, and owners' "would check daily." This is the main risk to de-risk in user testing.
 *   **Impact:** strong path to Product–Market Fit on the demand side, with a built-in supply-side hook.
 
@@ -23,7 +23,7 @@
 
 ## Feasible (for engineers)
 **Yes — with honest staging from "mock" to "real."** The POC deliberately fakes the hard parts; here's the real-build reality.
-*   **Already feasible today (in the POC):** the recommendation engine is a deterministic, **rule-based intent classifier** (`src/lib/assistant.js`) covering 8 intents, plus a transparent charging/cost model (`src/lib/booking.js`). This means the core "consultant" experience needs **no LLM and no per-query AI cost** to ship — a major feasibility advantage.
+*   **Already feasible today (in the POC):** the recommendation engine is a deterministic, **conversational rule-based engine** (`src/lib/assistant.js`) — multi-turn clarifying, slot memory, typo-tolerant greetings, and data-driven owner insights — plus a transparent charging/cost model (`src/lib/booking.js`) and a fully **interactive owner console** whose edits propagate to riders through shared state (`syncStationPorts`). This means the core two-sided experience needs **no LLM and no per-query AI cost** to ship — a major feasibility advantage.
 *   **What V1 production requires:**
     *   **Live availability** — integrate charger hardware via **OCPP** (or partner APIs) for real-time port status; this is the single highest-effort, highest-value dependency.
     *   **Real reservations** — a backend with a port-hold/expiry mechanism and conflict handling.

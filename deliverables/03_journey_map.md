@@ -15,10 +15,10 @@
 *   **Impact:** the value proposition (one trustworthy recommendation + guaranteed port) must be visible in the first screen; trust elements (ratings, transparent estimate, clear "mock vs. live" honesty) reduce skepticism.
 
 ## Convert
-*   **The moment:** she asks **eVcN Copilot** a real question — *"I need to charge near District 1 before 6pm"* — and gets **one** recommendation with a reason, a time/cost estimate, and a **Reserve** button. Or she filters station cards (Fast / Cheapest / Available now / Closest) and taps **Reserve Charger**.
-*   **Steps required:** open Driver/Assistant → ask or filter → review the single recommendation card (duration, cost, kWh, ports) → **Reserve** → enter motorcycle model, name, phone, preferred time, current/target battery → see the **live estimate** recompute → **Confirm booking** → confirmation screen with a Booking ID.
+*   **The moment:** she asks **eVcN Copilot** a real question. If it's specific (*"cheapest charger near District 1"*) she gets **one** recommendation immediately; if it's vague (*"I need to charge"*) the Copilot asks a single quick follow-up — *what matters most?* with one-tap chips — then recommends, remembering what she said. Either way she lands on one pick with a reason, a time/cost estimate, and a **Reserve** button. (Or she filters station cards — Fast / Cheapest / Available now / Closest — and taps **Reserve Charger**.)
+*   **Steps required:** open Driver/Assistant → ask (clarify if vague) or filter → review the single recommendation card (duration, cost, kWh, ports) → **Reserve** → enter motorcycle model, name, phone, preferred time, current/target battery → see the **live estimate** recompute → **Confirm booking** → confirmation screen with a Booking ID.
 *   **Emotional state:** hopeful but cautious; this is where friction kills the funnel.
-*   **Impact:** drives onboarding/Time-to-Value design — the reservation must be sub-minute, the estimate must feel honest, and the confirmation must feel *guaranteed*. (Current POC: ~650 ms response, inline validation, focus-trapped modal.)
+*   **Impact:** drives onboarding/Time-to-Value design — the reservation must be sub-minute, the estimate must feel honest, and the confirmation must feel *guaranteed*. The conversational clarify keeps a vague rider from bouncing instead of dumping a canned answer. (Current POC: ~400–700 ms responses, one-tap quick replies, inline validation, focus-trapped modal.)
 
 ## Retain (Retent)
 *   **What brings her back:** it *worked* — the port was free, the cost matched the estimate. The Copilot becomes her default "where do I charge?" answer 3–5×/week. Habit loop: low battery → ask Copilot → reserve → charge.
@@ -39,6 +39,6 @@
 |---|---|---|---|---|
 | Discover | "Where do I charge?" | Map + reservation promise | Anxious | Invisible / undiscoverable |
 | Aware | "Can I trust it?" | Hero, station cards, ratings | Skeptical | Looks like "just a map" |
-| Convert | "Get me a charger" | Copilot recommendation → Reserve → Confirm | Hopeful, cautious | Friction in booking |
+| Convert | "Get me a charger" | Copilot (clarify if vague) → Reserve → Confirm | Hopeful, cautious | Friction in booking |
 | Retain | "My default" | Saved profile, live status, Bookings | Relieved, habitual | Reservation not honored |
 | Advocate | "Tell my friends" | Referral, share confirmation | Loyal, proud | No incentive to share |

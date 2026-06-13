@@ -15,10 +15,10 @@ We win not by being the biggest map, but by being the most **trustworthy single 
 
 ## Capabilities (Themes)
 Grouped into value-delivering epics rather than a feature laundry list:
-1.  **Trusted Discovery & Reservation** — Copilot recommendations, filters, map, port-hold reservations, transparent cost/time estimates. *(POC proves the UX; productionize with live data.)*
+1.  **Trusted Discovery & Reservation** — conversational Copilot (clarify-when-vague, slot memory, quick replies), filters, map, port-hold reservations, transparent cost/time estimates. *(POC proves the conversational UX + reservation; productionize with live data.)*
 2.  **Live Network Truth** — OCPP/partner integration for real-time port status, fault detection, and reservation accuracy.
 3.  **Payments & Identity** — MoMo/ZaloPay/VNPay, saved rider profile & motorcycle, booking history.
-4.  **Owner Operations SaaS** — dashboard (utilization, revenue, faults), real-time fault alerts, AI suggestions, pricing controls.
+4.  **Owner Operations SaaS** — console (open/close, fault/fix, repricing, add/remove chargers), utilization/revenue/fault metrics, data-driven AI suggestions, real-time alerts, subscription billing. *(POC demonstrates the interactive owner actions + data-driven insights; productionize the real-time alerts + billing.)*
 5.  **Intelligent Copilot** — LLM upgrade with structured output, validation, streaming, multilingual (VI/EN) NLU; rule engine as fallback.
 6.  **Demand Shaping & Growth** — dynamic/off-peak pricing, predictive availability, referrals, fleet (delivery/ride-hailing) accounts.
 
@@ -39,8 +39,9 @@ Grouped into value-delivering epics rather than a feature laundry list:
 *   Backend + auth; replace `localStorage`; real reservations with port-hold/expiry.
 *   Live availability for a beachhead set of HCMC stations (OCPP/partner) — start where we have owner buy-in.
 *   Payments (MoMo/ZaloPay) and saved rider profile/motorcycle.
-*   Real map/distance; keep the **rule-based Copilot**, add light VI/EN NLU.
-*   *Outcome:* a rider can find, reserve, pay, and charge for real in their district.
+*   Real map/distance; keep the **conversational rule-based Copilot** (clarify-when-vague flow already prototyped), add light VI/EN NLU.
+*   Back the **owner console** (open/close, fault/fix, pricing, add/remove — already prototyped) with live data + real-time fault alerts.
+*   *Outcome:* a rider can find, reserve, pay, and charge for real in their district, and an owner can manage live stations.
 
 **🟡 Next (3–9 months) — intelligence & the owner business**
 *   **Owner SaaS dashboard** with real-time fault alerts and AI insights; subscription billing.
