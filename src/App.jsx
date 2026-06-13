@@ -64,7 +64,7 @@ import { ASSISTANT_INTRO_MESSAGE, buildOwnerInsights, converse, createSlots } fr
 
 const navItems = [
   { id: "driver", label: "Driver App", icon: Navigation },
-  { id: "dashboard", label: "Station Dashboard", icon: LayoutDashboard },
+  { id: "dashboard", label: "Station Owner Dashboard", icon: LayoutDashboard },
   { id: "assistant", label: "AI Assistant", icon: Bot },
   { id: "bookings", label: "Bookings", icon: CalendarCheck },
 ];
