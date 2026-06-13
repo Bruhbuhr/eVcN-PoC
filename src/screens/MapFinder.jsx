@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
 
 function pinStyle(station) {
@@ -8,9 +8,14 @@ function pinStyle(station) {
 }
 
 // Stitch "Map Station Finder" screen built from live station data.
-export default function MapFinder({ stations, onReserve }) {
-  const [selectedId, setSelectedId] = useState(stations[0]?.id ?? null);
+export default function MapFinder({ stations, onReserve, focusStationId }) {
+  const [selectedId, setSelectedId] = useState(focusStationId ?? stations[0]?.id ?? null);
   const selected = stations.find((station) => station.id === selectedId) || stations[0];
+
+  // "Navigate" from My Bookings focuses the booked station on the map.
+  useEffect(() => {
+    if (focusStationId) setSelectedId(focusStationId);
+  }, [focusStationId]);
 
   return (
     <div className="relative flex min-h-full flex-col">

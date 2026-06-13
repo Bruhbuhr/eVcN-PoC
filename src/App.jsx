@@ -34,6 +34,7 @@ function App() {
   const [chargers, setChargers] = useState(() => loadSavedNetworkState("evcn-chargers", seedChargers));
   const [selectedStation, setSelectedStation] = useState(null);
   const [successBooking, setSuccessBooking] = useState(null);
+  const [mapFocusId, setMapFocusId] = useState(null);
   const [filters, setFilters] = useState({
     fast: false,
     cheapest: false,
@@ -112,6 +113,39 @@ function App() {
     setSelectedStation(null);
     setSuccessBooking(null);
     setActiveView(tab);
+  }
+
+  // "Navigate" on a booking jumps to the Map tab with that station selected.
+  function goToStationOnMap(station) {
+    setSelectedStation(null);
+    setSuccessBooking(null);
+    setMapFocusId(station.id);
+    setActiveView("map");
+  }
+
+  // "Cancel" a reservation: move it to Past and free the charger it was holding,
+  // which the sync effect propagates back to station availability.
+  function cancelBooking(bookingId) {
+    const booking = bookings.find((item) => item.id === bookingId);
+    setBookings((current) =>
+      current.map((item) => (item.id === bookingId ? { ...item, status: "Cancelled" } : item))
+    );
+    if (!booking) return;
+    setChargers((current) => {
+      let freed = false;
+      return current.map((charger) => {
+        if (
+          !freed &&
+          charger.stationId === booking.stationId &&
+          charger.status === "Reserved" &&
+          charger.currentUser === booking.customerName
+        ) {
+          freed = true;
+          return { ...charger, status: "Available", currentUser: "-", sessionMinutes: 0 };
+        }
+        return charger;
+      });
+    });
   }
 
   function handleConfirmBooking(formData) {
@@ -217,7 +251,7 @@ function App() {
       return <ReserveCharger station={selectedStation} onConfirm={handleConfirmBooking} onBack={closeBooking} />;
     }
     if (activeView === "map") {
-      return <MapFinder stations={stations} onReserve={openBooking} />;
+      return <MapFinder stations={stations} onReserve={openBooking} focusStationId={mapFocusId} />;
     }
     if (activeView === "copilot") {
       return (
@@ -225,7 +259,14 @@ function App() {
       );
     }
     if (activeView === "bookings") {
-      return <MyBookings bookings={bookings} stationMap={stationMap} />;
+      return (
+        <MyBookings
+          bookings={bookings}
+          stationMap={stationMap}
+          onNavigate={goToStationOnMap}
+          onCancel={cancelBooking}
+        />
+      );
     }
     return (
       <RiderHome

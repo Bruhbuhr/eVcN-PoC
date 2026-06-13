@@ -175,6 +175,35 @@ test("navigates to the map and bookings tabs without errors", async () => {
   expect(screen.getByRole("button", { name: /^UPCOMING$/i })).toBeInTheDocument();
 });
 
+test("cancelling an upcoming booking moves it to the Past tab", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /^Bookings$/i }));
+  const cancelButtons = screen.getAllByRole("button", { name: /Cancel booking at/i });
+  const countBefore = cancelButtons.length;
+  expect(countBefore).toBeGreaterThan(0);
+
+  await user.click(cancelButtons[0]);
+
+  // One fewer reservation remains under Upcoming.
+  expect(screen.getAllByRole("button", { name: /Cancel booking at/i }).length).toBe(countBefore - 1);
+
+  // It now shows as cancelled under Past.
+  await user.click(screen.getByRole("button", { name: /^PAST$/i }));
+  expect(screen.getByText(/CANCELLED/i)).toBeInTheDocument();
+});
+
+test("Navigate on a booking opens the map", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /^Bookings$/i }));
+  await user.click(screen.getAllByRole("button", { name: /^Navigate$/i })[0]);
+
+  expect(screen.getByRole("heading", { name: /Nearest Stations/i })).toBeInTheDocument();
+});
+
 test("owner marking a charger faulty reduces the station's available ports for riders", async () => {
   const user = userEvent.setup();
   render(<App />);

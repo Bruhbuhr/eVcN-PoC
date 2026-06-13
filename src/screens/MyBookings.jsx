@@ -4,7 +4,7 @@ import MobileTopBar from "../components/MobileTopBar";
 import { formatVnd } from "../lib/booking";
 
 // Stitch "My Bookings" screen with Upcoming / Past segmented control.
-export default function MyBookings({ bookings, stationMap }) {
+export default function MyBookings({ bookings, stationMap, onNavigate, onCancel }) {
   const [tab, setTab] = useState("upcoming");
   const upcoming = bookings.filter((booking) => booking.status === "Reserved");
   const past = bookings.filter((booking) => booking.status !== "Reserved");
@@ -39,14 +39,16 @@ export default function MyBookings({ bookings, stationMap }) {
           ) : null}
 
           {list.map((booking) => {
-            const completed = booking.status === "Completed";
-            const district = stationMap[booking.stationId]?.district || "HCMC";
+            const isUpcoming = booking.status === "Reserved";
+            const cancelled = booking.status === "Cancelled";
+            const station = stationMap[booking.stationId];
+            const district = station?.district || "HCMC";
             return (
               <div
                 key={booking.id}
-                className={`overflow-hidden rounded-xl border border-outline-variant/20 bg-surface/95 shadow-sm transition-transform active:scale-[0.98] ${completed ? "opacity-70" : ""}`}
+                className={`overflow-hidden rounded-xl border border-outline-variant/20 bg-surface/95 shadow-sm transition-transform active:scale-[0.98] ${isUpcoming ? "" : "opacity-70"}`}
               >
-                <div className={`h-1.5 w-full ${completed ? "bg-slate-muted" : "bg-gradient-to-r from-primary to-secondary"}`} />
+                <div className={`h-1.5 w-full ${isUpcoming ? "bg-gradient-to-r from-primary to-secondary" : "bg-slate-muted"}`} />
                 <div className="p-4">
                   <div className="mb-3 flex items-start justify-between">
                     <div>
@@ -56,13 +58,17 @@ export default function MyBookings({ bookings, stationMap }) {
                         {district}, HCMC
                       </p>
                     </div>
-                    {completed ? (
-                      <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary">
-                        <Icon name="check_circle" fill className="text-[14px]" /> COMPLETED
-                      </span>
-                    ) : (
+                    {isUpcoming ? (
                       <span className="flex items-center gap-1 rounded-full bg-wait-amber/10 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-wait-amber">
                         <Icon name="schedule" fill className="text-[14px]" /> RESERVED
+                      </span>
+                    ) : cancelled ? (
+                      <span className="flex items-center gap-1 rounded-full bg-surface-container-high px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-on-surface-variant">
+                        <Icon name="close" fill className="text-[14px]" /> CANCELLED
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary">
+                        <Icon name="check_circle" fill className="text-[14px]" /> COMPLETED
                       </span>
                     )}
                   </div>
@@ -80,12 +86,21 @@ export default function MyBookings({ bookings, stationMap }) {
                       <p className="font-stat-lg text-[16px] text-primary">{formatVnd(booking.estimatedCost)}</p>
                     </div>
                   </div>
-                  {!completed ? (
+                  {isUpcoming ? (
                     <div className="flex gap-2">
-                      <button type="button" className="flex flex-1 items-center justify-center gap-2 rounded-full bg-ink-base py-3 text-sm font-body-bold text-white active:scale-95">
+                      <button
+                        type="button"
+                        onClick={() => station && onNavigate?.(station)}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-full bg-ink-base py-3 text-sm font-body-bold text-white transition-transform active:scale-95"
+                      >
                         <Icon name="near_me" className="text-[18px]" /> Navigate
                       </button>
-                      <button type="button" className="flex flex-1 items-center justify-center gap-2 rounded-full border border-outline-variant py-3 text-sm font-body-bold text-error active:scale-95">
+                      <button
+                        type="button"
+                        onClick={() => onCancel?.(booking.id)}
+                        aria-label={`Cancel booking at ${booking.stationName}`}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-full border border-outline-variant py-3 text-sm font-body-bold text-error transition-transform hover:bg-error-rose/5 active:scale-95"
+                      >
                         <Icon name="close" className="text-[18px]" /> Cancel
                       </button>
                     </div>
