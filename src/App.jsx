@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "./components/Icon";
+import DemoScript from "./components/DemoScript";
 import MobileShell from "./components/MobileShell";
 import RiderHome from "./screens/RiderHome";
 import MapFinder from "./screens/MapFinder";
@@ -8,30 +9,26 @@ import ReserveCharger from "./screens/ReserveCharger";
 import BookingConfirmed from "./screens/BookingConfirmed";
 import MyBookings from "./screens/MyBookings";
 import OwnerDashboard from "./screens/OwnerDashboard";
+import OwnerOnboarding from "./screens/OwnerOnboarding";
+import AuthScreen from "./screens/AuthScreen";
+import useChargingNetwork from "./hooks/useChargingNetwork";
+import { ASSISTANT_INTRO_MESSAGE, converse, createSlots } from "./lib/assistant";
 import {
-  bookings as seedBookings,
-  chargers as seedChargers,
-  sessions,
-  stations as seedStations,
-} from "./data/mockData";
-import {
-  createBooking,
-  createCharger,
-  loadSavedBookings,
-  loadSavedNetworkState,
-  saveBookings,
-  saveNetworkState,
-  syncStationPorts,
-  updateStationAvailability,
-} from "./lib/booking";
-import { ASSISTANT_INTRO_MESSAGE, buildOwnerInsights, converse, createSlots } from "./lib/assistant";
+  createSupabaseBrowserClient,
+  getSupabaseConfigStatus,
+  loginWithEmail,
+  registerWithEmail,
+  signOutUser,
+} from "./lib/auth";
 
 function App() {
+  const authConfigStatus = useMemo(() => getSupabaseConfigStatus(), []);
+  const supabaseClient = useMemo(() => createSupabaseBrowserClient(), []);
+  const [authLoading, setAuthLoading] = useState(authConfigStatus.isConfigured);
+  const [authUser, setAuthUser] = useState(null);
+  const [ownerOnboardingComplete, setOwnerOnboardingComplete] = useState(false);
   const [mode, setMode] = useState("rider"); // "rider" | "owner"
   const [activeView, setActiveView] = useState("home"); // home | map | copilot | bookings
-  const [stations, setStations] = useState(() => loadSavedNetworkState("evcn-stations", seedStations));
-  const [bookings, setBookings] = useState(() => loadSavedBookings(seedBookings));
-  const [chargers, setChargers] = useState(() => loadSavedNetworkState("evcn-chargers", seedChargers));
   const [selectedStation, setSelectedStation] = useState(null);
   const [successBooking, setSuccessBooking] = useState(null);
   const [mapFocusId, setMapFocusId] = useState(null);
@@ -46,26 +43,46 @@ function App() {
   const [assistantSlots, setAssistantSlots] = useState(createSlots);
   const responseTimeoutRef = useRef(null);
 
+  // Charging network domain: stations, chargers, bookings + their mutations.
+  const network = useChargingNetwork();
+  const { stations, chargers, bookings, stationMap, metrics, insights, revenueSeries } = network;
+
   useEffect(() => () => window.clearTimeout(responseTimeoutRef.current), []);
-  useEffect(() => saveBookings(bookings), [bookings]);
-  useEffect(() => saveNetworkState("evcn-stations", stations), [stations]);
-  useEffect(() => saveNetworkState("evcn-chargers", chargers), [chargers]);
-
-  // Chargers are the source of truth for ports: whenever owner actions change a
-  // charger, re-derive each station's available/total ports so rider-facing data
-  // (Home, Reserve, Copilot, Map) stays in sync. No-op guard avoids loops.
   useEffect(() => {
-    setStations((current) => {
-      const synced = syncStationPorts(current, chargers);
-      const changed = synced.some(
-        (station, index) =>
-          station.availablePorts !== current[index].availablePorts || station.totalPorts !== current[index].totalPorts
-      );
-      return changed ? synced : current;
-    });
-  }, [chargers]);
+    if (!supabaseClient) {
+      setAuthLoading(false);
+      return undefined;
+    }
 
-  const stationMap = useMemo(() => Object.fromEntries(stations.map((station) => [station.id, station])), [stations]);
+    let isMounted = true;
+    supabaseClient.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          setAuthUser(null);
+        } else {
+          setAuthUser(data.session?.user ?? null);
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setAuthUser(null);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setAuthLoading(false);
+      });
+
+    const { data } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => {
+      isMounted = false;
+      data?.subscription?.unsubscribe?.();
+    };
+  }, [supabaseClient]);
 
   const filteredStations = useMemo(() => {
     let list = [...stations];
@@ -83,20 +100,55 @@ function App() {
     return list;
   }, [filters, stations]);
 
-  const dashboardMetrics = useMemo(() => {
-    const totalChargers = chargers.length;
-    const availableChargers = chargers.filter((charger) => charger.status === "Available").length;
-    const activeSessions = sessions.length;
-    const revenueToday =
-      sessions.reduce((sum, session) => sum + session.revenue, 0) +
-      bookings.reduce((sum, booking) => sum + (booking.estimatedCost || 0), 0);
-    const unavailable = chargers.filter((charger) => charger.status !== "Available").length;
-    const utilization = totalChargers ? Math.round((unavailable / totalChargers) * 100) : 0;
-    const faults = chargers.filter((charger) => charger.status === "Faulty").length;
-    return { totalChargers, availableChargers, activeSessions, revenueToday, utilization, faults };
-  }, [bookings, chargers]);
+  const authName = authUser?.user_metadata?.full_name || authUser?.email || "Rider";
+  const authRole = authUser?.user_metadata?.role === "owner" ? "owner" : "driver";
+  const canOpenOwnerConsole = authRole === "owner";
+  const authRoleLabel = canOpenOwnerConsole ? "Owner account" : "Driver account";
+  const allowedMode = canOpenOwnerConsole ? "owner" : "rider";
+  const activeMode = authUser ? allowedMode : mode;
+  const ownerOnboardingKey = authUser?.id ? `evcn-owner-onboarding:${authUser.id}` : null;
 
-  const ownerInsights = useMemo(() => buildOwnerInsights(stations, chargers), [stations, chargers]);
+  useEffect(() => {
+    if (authUser && mode !== allowedMode) {
+      setMode(allowedMode);
+    }
+  }, [allowedMode, authUser, mode]);
+
+  useEffect(() => {
+    if (!authUser || authRole !== "owner" || !ownerOnboardingKey) {
+      setOwnerOnboardingComplete(false);
+      return;
+    }
+    setOwnerOnboardingComplete(localStorage.getItem(ownerOnboardingKey) === "complete");
+  }, [authRole, authUser, ownerOnboardingKey]);
+
+  async function handleLogin(formData) {
+    const data = await loginWithEmail(supabaseClient, formData);
+    setAuthUser(data.user ?? data.session?.user ?? null);
+    return data;
+  }
+
+  async function handleRegister(formData) {
+    const data = await registerWithEmail(supabaseClient, formData);
+    if (data.session?.user) setAuthUser(data.session.user);
+    return data;
+  }
+
+  async function handleSignOut() {
+    await signOutUser(supabaseClient);
+    setAuthUser(null);
+    setOwnerOnboardingComplete(false);
+    setMode("rider");
+    navigate("home");
+  }
+
+  function handleCompleteOwnerOnboarding(profile) {
+    if (ownerOnboardingKey) {
+      localStorage.setItem(ownerOnboardingKey, "complete");
+      localStorage.setItem(`${ownerOnboardingKey}:profile`, JSON.stringify(profile));
+    }
+    setOwnerOnboardingComplete(true);
+  }
 
   function openBooking(station) {
     setSuccessBooking(null);
@@ -123,45 +175,8 @@ function App() {
     setActiveView("map");
   }
 
-  // "Cancel" a reservation: move it to Past and free the charger it was holding,
-  // which the sync effect propagates back to station availability.
-  function cancelBooking(bookingId) {
-    const booking = bookings.find((item) => item.id === bookingId);
-    setBookings((current) =>
-      current.map((item) => (item.id === bookingId ? { ...item, status: "Cancelled" } : item))
-    );
-    if (!booking) return;
-    setChargers((current) => {
-      let freed = false;
-      return current.map((charger) => {
-        if (
-          !freed &&
-          charger.stationId === booking.stationId &&
-          charger.status === "Reserved" &&
-          charger.currentUser === booking.customerName
-        ) {
-          freed = true;
-          return { ...charger, status: "Available", currentUser: "-", sessionMinutes: 0 };
-        }
-        return charger;
-      });
-    });
-  }
-
   function handleConfirmBooking(formData) {
-    const booking = createBooking({ station: selectedStation, ...formData });
-    setBookings((current) => [booking, ...current]);
-    setStations((current) => updateStationAvailability(current, selectedStation.id));
-    setChargers((current) => {
-      let updatedOne = false;
-      return current.map((charger) => {
-        if (!updatedOne && charger.stationId === selectedStation.id && charger.status === "Available") {
-          updatedOne = true;
-          return { ...charger, status: "Reserved", currentUser: booking.customerName };
-        }
-        return charger;
-      });
-    });
+    const booking = network.confirmBooking(selectedStation, formData);
     setSuccessBooking(booking);
   }
 
@@ -199,43 +214,6 @@ function App() {
     }, delay);
   }
 
-  // --- Owner actions: mutate shared state; the sync effect + rider views propagate them.
-  function toggleStationOpen(stationId) {
-    setStations((current) =>
-      current.map((station) => (station.id === stationId ? { ...station, isOpen: !station.isOpen } : station))
-    );
-  }
-
-  function setStationPrice(stationId, price) {
-    const value = Math.max(0, Math.round(Number(price) || 0));
-    setStations((current) =>
-      current.map((station) => (station.id === stationId ? { ...station, pricePerKwh: value } : station))
-    );
-  }
-
-  function setChargerStatus(chargerId, status) {
-    setChargers((current) =>
-      current.map((charger) => {
-        if (charger.id !== chargerId) return charger;
-        const reset = status === "Available";
-        return {
-          ...charger,
-          status,
-          currentUser: reset ? "-" : charger.currentUser,
-          sessionMinutes: reset ? 0 : charger.sessionMinutes,
-        };
-      })
-    );
-  }
-
-  function addCharger(station) {
-    setChargers((current) => [...current, createCharger(station, current)]);
-  }
-
-  function removeCharger(chargerId) {
-    setChargers((current) => current.filter((charger) => charger.id !== chargerId));
-  }
-
   function renderRiderScreen() {
     if (successBooking) {
       return (
@@ -264,7 +242,7 @@ function App() {
           bookings={bookings}
           stationMap={stationMap}
           onNavigate={goToStationOnMap}
-          onCancel={cancelBooking}
+          onCancel={network.cancelBooking}
         />
       );
     }
@@ -291,38 +269,77 @@ function App() {
             </div>
             <span className="font-display-lg text-[18px] tracking-tight text-primary">eVcN</span>
           </div>
-          <div className="flex rounded-full bg-surface-container-high p-1">
-            {[
-              { id: "rider", label: "Rider App" },
-              { id: "owner", label: "Owner Console" },
-            ].map((option) => (
+          <div className="flex items-center gap-3">
+            {authUser ? (
+              <div className="hidden items-center gap-2 rounded-full bg-surface-container-high px-3 py-1.5 text-sm text-on-surface-variant sm:flex">
+                <Icon name="person" fill className="text-[18px]" />
+                <span>{authName}</span>
+                <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-body-bold text-primary">
+                  {authRoleLabel}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex rounded-full bg-surface-container-high p-1">
+              {[
+                { id: "rider", label: "Rider App" },
+                { id: "owner", label: "Owner Console" },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => {
+                    if (option.id !== allowedMode) return;
+                    setMode(option.id);
+                  }}
+                  disabled={!authUser || option.id !== allowedMode}
+                  title={authUser && option.id !== allowedMode ? `${option.label} requires a ${option.id === "owner" ? "owner" : "driver"} account` : undefined}
+                  className={`rounded-full px-4 py-1.5 text-sm font-body-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    activeMode === option.id ? "bg-ink-base text-on-primary" : "text-on-surface-variant"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            {authUser ? (
               <button
-                key={option.id}
                 type="button"
-                onClick={() => setMode(option.id)}
-                className={`rounded-full px-4 py-1.5 text-sm font-body-bold transition-colors ${
-                  mode === option.id ? "bg-ink-base text-on-primary" : "text-on-surface-variant"
-                }`}
+                onClick={handleSignOut}
+                className="rounded-full border border-outline-variant/30 px-3 py-1.5 text-sm font-body-bold text-on-surface-variant transition hover:bg-surface-container-high"
               >
-                {option.label}
+                Sign out
               </button>
-            ))}
+            ) : null}
           </div>
         </div>
       </div>
 
-      {mode === "owner" ? (
+      {authLoading ? (
+        <div className="flex min-h-[calc(100vh-65px)] items-center justify-center text-on-surface-variant">
+          Loading account...
+        </div>
+      ) : !authUser ? (
+        <AuthScreen configStatus={authConfigStatus} onLogin={handleLogin} onRegister={handleRegister} />
+      ) : activeMode === "owner" && !ownerOnboardingComplete ? (
+        <OwnerOnboarding
+          ownerName={authName}
+          onCreateStation={network.addStation}
+          onComplete={handleCompleteOwnerOnboarding}
+        />
+      ) : activeMode === "owner" ? (
         <OwnerDashboard
           stations={stations}
-          metrics={dashboardMetrics}
+          metrics={metrics}
           chargers={chargers}
           bookings={bookings}
-          insights={ownerInsights}
-          onToggleStation={toggleStationOpen}
-          onSetPrice={setStationPrice}
-          onSetChargerStatus={setChargerStatus}
-          onAddCharger={addCharger}
-          onRemoveCharger={removeCharger}
+          insights={insights}
+          revenueSeries={revenueSeries}
+          onToggleStation={network.toggleStationOpen}
+          onSetPrice={network.setStationPrice}
+          onSetChargerStatus={network.setChargerStatus}
+          onAddCharger={network.addCharger}
+          onRemoveCharger={network.removeCharger}
+          onCreateStation={network.addStation}
         />
       ) : (
         <>
@@ -333,43 +350,6 @@ function App() {
         </>
       )}
     </div>
-  );
-}
-
-function DemoScript() {
-  const steps = [
-    "Open the Rider App home",
-    "Tap the Copilot pill and ask: charge near District 1 before 6pm",
-    "Reserve the recommended charger",
-    "Enter motorcycle and battery details",
-    "Confirm the booking",
-    "Switch to Owner Console",
-    "See the booking and revenue update",
-  ];
-  return (
-    <section className="mx-auto mt-8 max-w-[760px] px-4 pb-12">
-      <div className="glass-card rounded-2xl border border-outline-variant/20 p-5 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-container/15 text-primary">
-            <Icon name="two_wheeler" fill className="text-[22px]" />
-          </div>
-          <div>
-            <p className="font-label-caps text-[12px] uppercase tracking-[0.18em] text-primary">Demo script</p>
-            <h2 className="font-headline-md text-[20px] text-on-surface">Run the POC in one browser</h2>
-          </div>
-        </div>
-        <ol className="mt-5 grid gap-3 sm:grid-cols-2">
-          {steps.map((step, index) => (
-            <li key={step} className="flex items-start gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-3 text-sm leading-6 text-on-surface-variant">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-base text-xs font-bold text-on-primary">
-                {index + 1}
-              </span>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </div>
-    </section>
   );
 }
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Area,
   AreaChart,
@@ -9,17 +10,23 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import OwnerOnboarding from "./OwnerOnboarding";
 import Icon from "../components/Icon";
-import { formatVnd } from "../lib/booking";
-import { revenueData } from "../data/mockData";
+import { buildRevenueSeries, formatVnd } from "../lib/booking";
 
+// Sidebar links scroll to the matching dashboard section (no dead "#" anchors).
 const sideLinks = [
-  { icon: "dashboard", label: "Overview", active: true },
-  { icon: "sensors", label: "Live Feed" },
-  { icon: "payments", label: "Revenue" },
-  { icon: "build", label: "Maintenance" },
-  { icon: "psychology", label: "AI Insights" },
+  { icon: "dashboard", label: "Overview", target: "overview", active: true },
+  { icon: "payments", label: "Revenue", target: "revenue" },
+  { icon: "ev_station", label: "Stations", target: "stations" },
+  { icon: "build", label: "Chargers", target: "chargers" },
+  { icon: "psychology", label: "AI Insights", target: "insights" },
 ];
+
+function scrollToSection(target) {
+  if (typeof document === "undefined") return;
+  document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function MetricCard({ icon, label, value, helper, accent }) {
   return (
@@ -97,7 +104,11 @@ export default function OwnerDashboard({
   onSetChargerStatus,
   onAddCharger,
   onRemoveCharger,
+  onCreateStation,
+  revenueSeries,
 }) {
+  const [showAddStation, setShowAddStation] = useState(false);
+  const revenueData = revenueSeries ?? buildRevenueSeries(bookings, []);
   const liveUtilization = stations.map((station) => {
     const own = chargers.filter((charger) => charger.stationId === station.id);
     const total = own.length;
@@ -116,10 +127,10 @@ export default function OwnerDashboard({
           <div className="flex items-center gap-xl">
             <span className="font-headline-md text-[24px] tracking-tight text-primary">eVcN Charging</span>
             <div className="hidden gap-lg md:flex">
-              <a className="border-b-2 border-primary pb-1 font-body-bold text-primary" href="#">Dashboard</a>
-              <a className="font-body-base text-on-surface-variant transition-colors hover:text-primary" href="#">Analytics</a>
-              <a className="font-body-base text-on-surface-variant transition-colors hover:text-primary" href="#">Stations</a>
-              <a className="font-body-base text-on-surface-variant transition-colors hover:text-primary" href="#">Finance</a>
+              <button type="button" onClick={() => scrollToSection("overview")} className="border-b-2 border-primary pb-1 font-body-bold text-primary">Dashboard</button>
+              <button type="button" onClick={() => scrollToSection("revenue")} className="font-body-base text-on-surface-variant transition-colors hover:text-primary">Analytics</button>
+              <button type="button" onClick={() => scrollToSection("stations")} className="font-body-base text-on-surface-variant transition-colors hover:text-primary">Stations</button>
+              <button type="button" onClick={() => scrollToSection("chargers")} className="font-body-base text-on-surface-variant transition-colors hover:text-primary">Chargers</button>
             </div>
           </div>
           <div className="flex items-center gap-md">
@@ -142,10 +153,11 @@ export default function OwnerDashboard({
             </div>
           </div>
           {sideLinks.map((link) => (
-            <a
+            <button
               key={link.label}
-              href="#"
-              className={`mx-2 flex items-center gap-3 rounded-lg px-4 py-3 transition-all ${
+              type="button"
+              onClick={() => scrollToSection(link.target)}
+              className={`mx-2 flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-all ${
                 link.active
                   ? "bg-secondary-container text-on-secondary-container"
                   : "text-on-surface-variant hover:translate-x-1 hover:bg-surface-container-high"
@@ -153,10 +165,14 @@ export default function OwnerDashboard({
             >
               <Icon name={link.icon} />
               <span className="font-body-base">{link.label}</span>
-            </a>
+            </button>
           ))}
           <div className="mt-auto border-t border-outline-variant/20 pt-lg">
-            <button className="mx-md mb-lg w-4/5 rounded-full bg-primary px-lg py-sm font-body-bold text-on-primary transition-opacity hover:opacity-90">
+            <button
+              type="button"
+              onClick={() => setShowAddStation(true)}
+              className="mx-md mb-lg w-4/5 rounded-full bg-primary px-lg py-sm font-body-bold text-on-primary transition-opacity hover:opacity-90"
+            >
               Add New Station
             </button>
           </div>
@@ -165,7 +181,7 @@ export default function OwnerDashboard({
         {/* Main */}
         <main className="flex-1 bg-surface-bright p-margin-desktop">
           {/* Hero */}
-          <section className="relative mb-xl flex min-h-[220px] items-center overflow-hidden rounded-2xl bg-ink-base p-xl">
+          <section id="overview" className="relative mb-xl flex min-h-[220px] items-center overflow-hidden rounded-2xl bg-ink-base p-xl">
             <div className="relative z-10 flex w-full items-center justify-between text-white">
               <div className="max-w-md">
                 <h1 className="mb-xs font-display-lg text-[36px]">System Pulse</h1>
@@ -207,7 +223,7 @@ export default function OwnerDashboard({
           <div className="grid grid-cols-12 gap-xl">
             <div className="col-span-12 space-y-xl lg:col-span-8">
               {/* Charts */}
-              <div className="grid grid-cols-1 gap-xl md:grid-cols-2">
+              <div id="revenue" className="grid grid-cols-1 gap-xl md:grid-cols-2">
                 <div className="glass-card rounded-2xl p-lg">
                   <h3 className="mb-lg font-headline-md text-[18px]">Revenue Trends</h3>
                   <ResponsiveContainer width="100%" height={240}>
@@ -241,7 +257,7 @@ export default function OwnerDashboard({
               </div>
 
               {/* Station controls */}
-              <div className="glass-card overflow-hidden rounded-2xl">
+              <div id="stations" className="glass-card overflow-hidden rounded-2xl">
                 <div className="flex items-center justify-between border-b border-outline-variant/20 p-lg">
                   <h3 className="font-headline-md text-[20px]">Station Controls</h3>
                   <span className="text-sm text-on-surface-variant">Changes flow live to riders</span>
@@ -313,7 +329,7 @@ export default function OwnerDashboard({
             {/* Right column */}
             <div className="col-span-12 space-y-xl lg:col-span-4">
               {/* AI insights */}
-              <div className="glass-card overflow-hidden rounded-2xl border-2 border-secondary-container/30">
+              <div id="insights" className="glass-card overflow-hidden rounded-2xl border-2 border-secondary-container/30">
                 <div className="bg-gradient-to-br from-secondary to-on-secondary-container p-lg text-white">
                   <div className="mb-xs flex items-center gap-sm">
                     <Icon name="psychology" />
@@ -337,7 +353,7 @@ export default function OwnerDashboard({
               <div className="glass-card overflow-hidden rounded-2xl">
                 <div className="flex items-center justify-between border-b border-outline-variant/20 p-lg">
                   <h3 className="font-headline-md text-[18px]">Recent Bookings</h3>
-                  <a className="font-label-caps text-[12px] uppercase tracking-[0.12em] text-primary" href="#">View all</a>
+                  <button type="button" onClick={() => scrollToSection("chargers")} className="font-label-caps text-[12px] uppercase tracking-[0.12em] text-primary">View all</button>
                 </div>
                 <div className="space-y-lg p-lg">
                   {bookings.slice(0, 6).map((booking) => (
@@ -363,7 +379,7 @@ export default function OwnerDashboard({
           </div>
 
           {/* Charger status (full width) */}
-          <div className="glass-card mt-xl overflow-hidden rounded-2xl">
+          <div id="chargers" className="glass-card mt-xl overflow-hidden rounded-2xl">
             <div className="border-b border-outline-variant/20 p-lg">
               <h3 className="font-headline-md text-[20px]">Charger Status</h3>
             </div>
@@ -400,6 +416,19 @@ export default function OwnerDashboard({
           </div>
         </main>
       </div>
+
+      {showAddStation ? (
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-ink-base/60 backdrop-blur-sm">
+          <div className="min-h-full bg-surface">
+            <OwnerOnboarding
+              variant="add"
+              onCreateStation={onCreateStation}
+              onComplete={() => setShowAddStation(false)}
+              onCancel={() => setShowAddStation(false)}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

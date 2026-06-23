@@ -62,6 +62,12 @@ export function createBooking({
   };
 }
 
+// Reset a charger to its free/available baseline. Used when an owner frees a
+// busy charger and when a rider cancels a reservation, so both paths stay in sync.
+export function freeCharger(charger) {
+  return { ...charger, status: "Available", currentUser: "-", sessionMinutes: 0 };
+}
+
 export function updateStationAvailability(stationList, stationId) {
   return stationList.map((station) => {
     if (station.id !== stationId) return station;
@@ -100,7 +106,9 @@ function stationPrefix(station, chargerList) {
 }
 
 // Build a new "Available" charger for a station with a non-colliding id
-// (e.g. D1-F06), derived from the station's existing chargers.
+// (e.g. D1-F06), derived from the station's existing chargers. The id is also
+// checked against the whole charger list so a freshly registered station in an
+// existing district can't reuse an id another station already holds.
 export function createCharger(station, chargerList) {
   const own = chargerList.filter((charger) => charger.stationId === station.id);
   const prefix = stationPrefix(station, chargerList);
@@ -108,10 +116,16 @@ export function createCharger(station, chargerList) {
   const usedNumbers = own
     .map((charger) => Number(String(charger.id).split("-")[1]?.replace(/\D/g, "")))
     .filter((value) => Number.isFinite(value));
-  const next = (usedNumbers.length ? Math.max(...usedNumbers) : 0) + 1;
+  const taken = new Set(chargerList.map((charger) => charger.id));
+  let next = (usedNumbers.length ? Math.max(...usedNumbers) : 0) + 1;
+  let id = `${prefix}-${letter}${String(next).padStart(2, "0")}`;
+  while (taken.has(id)) {
+    next += 1;
+    id = `${prefix}-${letter}${String(next).padStart(2, "0")}`;
+  }
 
   return {
-    id: `${prefix}-${letter}${String(next).padStart(2, "0")}`,
+    id,
     stationId: station.id,
     station: station.name,
     type: station.chargerType,
@@ -119,6 +133,108 @@ export function createCharger(station, chargerList) {
     currentUser: "-",
     sessionMinutes: 0,
   };
+}
+
+const SLUG_DIACRITICS = /[̀-ͯ]/g;
+
+function slugify(text) {
+  const slug = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(SLUG_DIACRITICS, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  return slug || "station";
+}
+
+const VALID_CHARGER_TYPES = ["Standard", "Fast", "Ultra-fast"];
+
+// Build a new station from the owner onboarding/registration form. Returns a
+// station shaped like the seed data (mockData.js) with a collision-free id.
+// Chargers are created separately (loop createCharger) so the port-sync effect
+// derives availablePorts/totalPorts from them; the counts here are the initial
+// values that match the requested charger count.
+export function createStation(form = {}, existingStations = []) {
+  const name = (form.name || "").trim() || "New eVcN Station";
+  const district = form.district || "District 1";
+  const chargerType = VALID_CHARGER_TYPES.includes(form.chargerType) ? form.chargerType : "Fast";
+  const portCount = Math.max(1, Math.round(Number(form.chargerCount) || 1));
+  const pricePerKwh = Math.max(0, Math.round(Number(form.pricePerKwh) || 0));
+
+  const baseId = `station-${slugify(name)}`;
+  const taken = new Set(existingStations.map((station) => station.id));
+  let id = baseId;
+  let suffix = 2;
+  while (taken.has(id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  const index = existingStations.length;
+  return {
+    id,
+    name,
+    location: district,
+    district,
+    distanceKm: Math.round((2 + ((index * 1.7) % 6)) * 10) / 10,
+    chargerType,
+    availablePorts: portCount,
+    totalPorts: portCount,
+    pricePerKwh,
+    waitMinutes: 0,
+    rating: 5,
+    isOpen: true,
+    mapPosition: { x: 25 + ((index * 13) % 55), y: 24 + ((index * 17) % 55) },
+  };
+}
+
+const REVENUE_BUCKETS = [
+  { label: "8am", hour: 8 },
+  { label: "10am", hour: 10 },
+  { label: "12pm", hour: 12 },
+  { label: "2pm", hour: 14 },
+  { label: "4pm", hour: 16 },
+  { label: "6pm", hour: 18 },
+  { label: "8pm", hour: 20 },
+];
+
+function parseHour(timeLabel) {
+  const match = /^(\d{1,2})/.exec(String(timeLabel || ""));
+  return match ? Number(match[1]) : null;
+}
+
+// Build a cumulative revenue-by-hour series for the owner dashboard chart from
+// live data, so the area chart trends with real bookings instead of static
+// sample numbers. Sessions seed a morning baseline; each booking lands in the
+// bucket matching its preferred time. The final point equals the dashboard's
+// "Revenue Today" metric (sessions + booking estimates).
+export function buildRevenueSeries(bookings = [], sessions = []) {
+  const perBucket = REVENUE_BUCKETS.map(() => 0);
+
+  const sessionTotal = sessions.reduce((sum, session) => sum + (session.revenue || 0), 0);
+  if (sessionTotal) {
+    perBucket[0] += sessionTotal * 0.5;
+    perBucket[1] += sessionTotal * 0.5;
+  }
+
+  bookings.forEach((booking) => {
+    const hour = parseHour(booking.preferredTime);
+    let index = REVENUE_BUCKETS.length - 1;
+    if (hour != null) {
+      index = 0;
+      for (let i = 0; i < REVENUE_BUCKETS.length; i += 1) {
+        if (hour >= REVENUE_BUCKETS[i].hour) index = i;
+      }
+    }
+    perBucket[index] += booking.estimatedCost || 0;
+  });
+
+  let running = 0;
+  return REVENUE_BUCKETS.map((bucket, i) => {
+    running += perBucket[i];
+    return { time: bucket.label, revenue: Math.round(running) };
+  });
 }
 
 export function loadSavedBookings(seedBookings) {

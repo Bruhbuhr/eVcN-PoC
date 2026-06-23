@@ -23,3 +23,13 @@ eVcN is a two-sided platform. **Riders** describe a charging need in plain langu
 - `src/lib/booking.js` — charging/cost estimate model + reservation + persistence
 - `src/data/mockData.js` — 5 HCMC stations, 20 chargers, bookings, sessions, revenue/utilization
 - `src/App.jsx` — Driver App, AI Assistant, Station Dashboard, Bookings, Booking modal
+
+## Supabase auth setup
+The login/register screen uses Supabase Auth from the browser. Add only browser-safe Vite variables to `.env`:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-browser-safe-anon-key
+```
+
+Do not expose a Supabase service-role key in frontend code. User accounts are stored by Supabase Auth; bookings and charger demo data remain local/mock for the POC.

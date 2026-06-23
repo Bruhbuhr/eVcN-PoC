@@ -16,6 +16,9 @@ eVcN is a two-sided platform. **Riders** chat with **eVcN Copilot** — a *conve
 | 06 | [PRD](06_prd.md) | V1: conversational Copilot, reservation + interactive owner console |
 | 07 | [Prototype Plan](07_prototype.md) | User flow + FE prototype focus (the POC itself) |
 | 08 | [Pitch Deck](08_pitch_deck.md) | Hook → Problem → Solution → Desirability/Viability/Feasibility |
+| 09 | [Demo Runbook](09_demo_runbook.md) | Tech59 owner-forward run-of-show + talk track ("idea → built → why") |
+| 10 | [Owner Interview Guide](10_owner_interview_guide.md) | Screener + questions for 5–10 HCMC owners; tests the [04 DVF](04_dvf.md) assumptions |
+| 11 | [VN Regulation Brief](11_vn_regulation_brief.md) | Research scaffold: standards, licensing, electricity-pricing — leads marked to verify |
 
 ## Key source references
 - `src/lib/assistant.js` — conversational eVcN Copilot (`converse` + slot memory, intent detection, typo-tolerant greeting, recommendation) and data-driven `buildOwnerInsights`
